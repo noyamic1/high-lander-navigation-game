@@ -4,8 +4,8 @@ const SESSION_ID_PATTERN = /^[\w-]{1,64}$/;
 
 /**
  * Socket protocol (client -> server, all with an ack callback):
- *   game:join     { sessionId, position }  -> { ok, playerId, session }
- *   player:move   { position }             -> { ok }
+ *   game:join     { sessionId, position }  -> { ok, playerId, session, distanceToGoal }
+ *   player:move   { position }             -> { ok, distanceToGoal }
  *   game:restart  {}                       -> { ok }
  * Server -> client:
  *   game:state    session snapshot (goal + players)
@@ -41,7 +41,7 @@ export function registerSocketHandlers(io, service, logger = console) {
       socket.emit('game:state', session.toJSON());
       sendRoute(route);
       if (update.justReachedGoal) socket.emit('goal:reached', { playerId, at: Date.now() });
-      return { playerId, session: session.toJSON() };
+      return { playerId, session: session.toJSON(), distanceToGoal: update.distanceToGoal };
     }));
 
     socket.on('player:move', handle(async ({ position }) => {
@@ -53,7 +53,7 @@ export function registerSocketHandlers(io, service, logger = console) {
       if (update.justReachedGoal) {
         socket.emit('goal:reached', { playerId, at: session.players.get(playerId).reachedAt });
       }
-      return {};
+      return { distanceToGoal: update.distanceToGoal };
     }));
 
     socket.on('game:restart', handle(async () => {

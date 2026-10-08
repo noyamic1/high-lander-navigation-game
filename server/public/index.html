@@ -4,8 +4,32 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Navigation Game</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h1>Navigation Game</h1>
+  <div id="map"></div>
+
+  <aside id="panel">
+    <h1>Navigation Game</h1>
+    <div id="status">Waiting for location…</div>
+    <dl>
+      <dt>Session</dt><dd id="session">-</dd>
+      <dt>Distance to goal</dt><dd id="distance">-</dd>
+      <dt>Route length</dt><dd id="route">-</dd>
+    </dl>
+    <label>
+      <input type="checkbox" id="simulate" />
+      Simulate movement (arrow keys / click map)
+    </label>
+    <button id="restart" disabled>New goal</button>
+  </aside>
+
+  <div id="banner" hidden>🏁 Goal reached!</div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Served automatically by the Socket.IO server, so client and server versions always match. -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
