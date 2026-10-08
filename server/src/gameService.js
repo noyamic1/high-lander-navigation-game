@@ -6,12 +6,17 @@ import { distanceMeters, randomPointInRing } from './geo.js';
  * Dependencies are injected so tests can use a fake router and clock.
  */
 export function createGameService({ store, routing, config, now = Date.now, random = Math.random, logger = console }) {
-  // Pending creations per session id: two joins racing on an empty session must share one goal.
-  const creating = new Map();
+  // In-flight goal generation per session id. Concurrent joins on an empty session (or concurrent
+  // restarts) share one promise, so everyone ends up with the same goal.
+  const pending = new Map();
+  const dedupe = (sessionId, fn) => {
+    if (!pending.has(sessionId)) pending.set(sessionId, fn().finally(() => pending.delete(sessionId)));
+    return pending.get(sessionId);
+  };
   // Per-player rerouting bookkeeping, kept outside the domain model on purpose.
   const routeState = new Map();
 
-  async function createSession(sessionId, origin) {
+  async function generateGoal(origin) {
     const candidate = randomPointInRing(origin, config.goalMinRadiusMeters, config.goalMaxRadiusMeters, random);
     let goal = candidate;
     try {
@@ -20,6 +25,11 @@ export function createGameService({ store, routing, config, now = Date.now, rand
     } catch (err) {
       logger.warn(`snapToRoad failed, using raw goal: ${err.message}`);
     }
+    return goal;
+  }
+
+  async function createSession(sessionId, origin) {
+    const goal = await generateGoal(origin);
     const session = new GameSession({ id: sessionId, goal, thresholdMeters: config.goalThresholdMeters, createdAt: now() });
     store.set(session);
     return session;
@@ -28,10 +38,7 @@ export function createGameService({ store, routing, config, now = Date.now, rand
   function getOrCreateSession(sessionId, origin) {
     const existing = store.get(sessionId);
     if (existing) return Promise.resolve(existing);
-    if (!creating.has(sessionId)) {
-      creating.set(sessionId, createSession(sessionId, origin).finally(() => creating.delete(sessionId)));
-    }
-    return creating.get(sessionId);
+    return dedupe(sessionId, () => createSession(sessionId, origin));
   }
 
   function requireSession(sessionId) {
@@ -70,31 +77,45 @@ export function createGameService({ store, routing, config, now = Date.now, rand
   }
 
   return {
-    async join(sessionId, playerId, position) {
+    async join(sessionId, playerId, position, name) {
       const session = await getOrCreateSession(sessionId, position);
-      session.addPlayer(playerId, position);
+      session.addPlayer(playerId, position, name);
       const update = session.updatePosition(playerId, position, now());
       const route = await routeFor(session, playerId, { force: true });
       return { session, route, update };
     },
 
-    async updatePosition(sessionId, playerId, position) {
+    /**
+     * Synchronous on purpose: the goal/winner decision happens immediately, and the caller can
+     * broadcast the move before (slow) rerouting via routeFor.
+     */
+    updatePosition(sessionId, playerId, position) {
       const session = requireSession(sessionId);
       const update = session.updatePosition(playerId, position, now());
-      // No point routing someone who is already at the goal.
-      const route = update.hasReachedGoal ? null : await routeFor(session, playerId);
-      return { session, route, update };
+      return { session, update };
     },
 
-    /** New goal around the requesting player; everyone in the session keeps playing. */
-    async restart(sessionId, playerId) {
-      const old = requireSession(sessionId);
-      const origin = old.players.get(playerId)?.position;
+    /**
+     * New goal around the requesting player, same session and players. Mutating in place (rather
+     * than recreating) means a player who leaves mid-restart can't be re-added as a ghost.
+     */
+    restart(sessionId, playerId) {
+      const session = requireSession(sessionId);
+      const origin = session.players.get(playerId)?.position;
       if (!origin) throw new Error(`unknown player ${playerId}`);
-      store.delete(sessionId);
-      const session = await getOrCreateSession(sessionId, origin);
-      for (const p of old.players.values()) session.addPlayer(p.id, p.position);
-      return session;
+      return dedupe(sessionId, async () => {
+        session.resetGoal(await generateGoal(origin));
+        // Old throttle state would block everyone's first route to the new goal.
+        for (const id of session.players.keys()) routeState.delete(id);
+        return session;
+      });
+    },
+
+    /** Fresh route for every player who hasn't reached the goal (used after a restart). */
+    async routesForAll(session) {
+      const ids = [...session.players.values()].filter((p) => p.reachedAt === null).map((p) => p.id);
+      const routes = await Promise.all(ids.map((id) => routeFor(session, id, { force: true })));
+      return ids.map((playerId, i) => ({ playerId, route: routes[i] }));
     },
 
     leave(sessionId, playerId) {
@@ -103,7 +124,10 @@ export function createGameService({ store, routing, config, now = Date.now, rand
       if (!session) return null;
       session.removePlayer(playerId);
       // Free memory for abandoned games; the next join gets a fresh goal.
-      if (session.isEmpty) store.delete(sessionId);
+      if (session.isEmpty) {
+        store.delete(sessionId);
+        return null;
+      }
       return session;
     },
 

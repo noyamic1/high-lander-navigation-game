@@ -48,15 +48,19 @@ test('rerouting is throttled by time and by distance moved', async () => {
   assert.equal(calls.route, 1);
 
   const moved = { lat: START.lat + 0.001, lng: START.lng }; // ~110 m
-  await service.updatePosition('s1', 'p1', moved);
+  const move = async () => {
+    const { session } = service.updatePosition('s1', 'p1', moved);
+    return service.routeFor(session, 'p1');
+  };
+  await move();
   assert.equal(calls.route, 1, 'too soon');
 
   tick(3000);
-  await service.updatePosition('s1', 'p1', moved);
+  await move();
   assert.equal(calls.route, 2, 'enough time and distance');
 
   tick(3000);
-  await service.updatePosition('s1', 'p1', moved);
+  await move();
   assert.equal(calls.route, 2, 'did not move');
 });
 
@@ -78,4 +82,49 @@ test('session is removed when the last player leaves', async () => {
   service.leave('s1', 'p1');
   const again = await service.join('s1', 'p1', START);
   assert.notEqual(again.session, session);
+});
+
+test('first player to reach the goal wins; later arrivals do not', async () => {
+  const { service, tick } = setup();
+  const { session } = await service.join('s1', 'p1', START, 'Alice');
+  await service.join('s1', 'p2', START, 'Bob');
+
+  tick(10);
+  const first = service.updatePosition('s1', 'p2', session.goal);
+  tick(10);
+  const second = service.updatePosition('s1', 'p1', session.goal);
+
+  assert.equal(first.update.isWinner, true);
+  assert.equal(second.update.isWinner, false);
+  assert.equal(second.update.justReachedGoal, true, 'late arrival still reached the goal');
+  assert.deepEqual(session.winner, { playerId: 'p2', name: 'Bob', at: 10 });
+});
+
+test('restart keeps players, resets winner and gives everyone a fresh route', async () => {
+  const { service, calls } = setup();
+  const { session } = await service.join('s1', 'p1', START);
+  await service.join('s1', 'p2', START);
+  service.updatePosition('s1', 'p1', session.goal);
+  const oldGoal = session.goal;
+
+  const restarted = await service.restart('s1', 'p2');
+  assert.equal(restarted, session, 'same session object');
+  assert.notDeepEqual(restarted.goal, oldGoal);
+  assert.equal(restarted.winner, null);
+  assert.equal(restarted.players.size, 2);
+
+  const before = calls.route;
+  const routes = await service.routesForAll(restarted);
+  assert.equal(routes.length, 2);
+  assert.equal(calls.route - before, 2, 'throttle was reset for everyone');
+});
+
+test('concurrent restarts produce a single new goal', async () => {
+  const { service, calls } = setup();
+  await service.join('s1', 'p1', START);
+  await service.join('s1', 'p2', START);
+  const snapsBefore = calls.snap;
+  const [a, b] = await Promise.all([service.restart('s1', 'p1'), service.restart('s1', 'p2')]);
+  assert.equal(a.goal, b.goal);
+  assert.equal(calls.snap - snapsBefore, 1);
 });

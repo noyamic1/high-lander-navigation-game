@@ -12,10 +12,18 @@ export class GameSession {
     this.thresholdMeters = thresholdMeters;
     this.createdAt = createdAt;
     this.players = new Map();
+    this.winner = null;
   }
 
-  addPlayer(playerId, position) {
-    this.players.set(playerId, { id: playerId, position, reachedAt: null });
+  addPlayer(playerId, position, name = playerId) {
+    this.players.set(playerId, { id: playerId, name, position, reachedAt: null });
+  }
+
+  /** New round in the same session: players stay, goal and results reset. */
+  resetGoal(goal) {
+    this.goal = goal;
+    this.winner = null;
+    for (const player of this.players.values()) player.reachedAt = null;
   }
 
   removePlayer(playerId) {
@@ -37,7 +45,13 @@ export class GameSession {
     const justReachedGoal = player.reachedAt === null && distanceToGoal <= this.thresholdMeters;
     if (justReachedGoal) player.reachedAt = at;
 
-    return { distanceToGoal, justReachedGoal, hasReachedGoal: player.reachedAt !== null };
+    // Conflict resolution for "who was first": check-and-set with no await in between, so within
+    // one Node process no other update can interleave. Server arrival order decides, never a
+    // client-sent timestamp (clients can lie or have skewed clocks).
+    const isWinner = justReachedGoal && this.winner === null;
+    if (isWinner) this.winner = { playerId, name: player.name, at };
+
+    return { distanceToGoal, justReachedGoal, isWinner, hasReachedGoal: player.reachedAt !== null };
   }
 
   toJSON() {
@@ -46,6 +60,7 @@ export class GameSession {
       goal: this.goal,
       thresholdMeters: this.thresholdMeters,
       players: [...this.players.values()],
+      winner: this.winner,
     };
   }
 }
