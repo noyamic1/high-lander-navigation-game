@@ -41,8 +41,50 @@ The HUD (top right) shows your position and GPS accuracy, the goal position (wit
 button), the live straight-line distance to the goal, the OSRM route distance and the game status.
 If location permission is denied or the position is unavailable, the HUD shows an error.
 
-**Sessions:** `http://localhost:3000/?session=my-game` joins a named session (default: `default`).
-Everyone in the same session shares the same goal.
+## Multi-player competitive mode
+
+Open the same session in several windows or on several machines:
+
+```
+http://localhost:3000/?session=race1&name=Alice
+http://localhost:3000/?session=race1&name=Bob
+```
+
+- `session` picks the game (default `default`); `name` is optional (default `Player-xxxx`).
+- Everyone in a session shares **one goal**, created around the first player who joins.
+- All players are shown on the shared map in real time (faded balls with name labels) and listed
+  in the HUD.
+- The **first player to reach the goal wins**: everyone sees "🏆 Alice won!". Players who arrive
+  later are told they reached it but not first.
+- **New goal** starts a new round for the whole session, with the goal around whoever pressed it.
+
+**Testing two players on one machine:** open two Chrome windows with the URLs above. DevTools
+Sensors overrides are per tab, so give each window its own location, then paste the goal into
+both and see who wins.
+
+### Concurrency and conflict resolution
+
+| Problem | How it's handled |
+|---------|------------------|
+| Two players reach the goal at the same moment | `GameSession.updatePosition` checks `winner === null` and sets it with no `await` in between. Node runs one event at a time, so exactly one update wins. The server's arrival order decides, never a client timestamp. |
+| Two players join an empty session at the same time | Goal generation is deduplicated per session (a shared promise), so both get the same goal. |
+| Two players press "New goal" at the same time | Same deduplication: one new goal for everyone. |
+| A player leaves during a restart | Restart mutates the existing session instead of recreating it, so no ghost players. |
+| Slow routing delaying other players' updates | The move is broadcast before the OSRM call; routing is per player and throttled. |
+| Disconnect / reconnect | The player is removed and the room gets a new snapshot; the client auto-reconnects and re-joins with its last position. |
+
+### Events
+
+| Event | Direction | Audience | When |
+|-------|-----------|----------|------|
+| `game:join` | client → server | — | first location fix (or reconnect) |
+| `player:move` | client → server | — | every location update |
+| `game:restart` | client → server | — | "New goal" pressed |
+| `game:state` | server → client | whole room | join, leave, restart (full snapshot) |
+| `player:moved` | server → client | rest of the room | every move (small delta) |
+| `route:update` | server → client | that player only | join, throttled reroute, restart |
+| `game:won` | server → client | whole room | first player reaches the goal |
+| `goal:reached` | server → client | that player only | reached the goal after someone else won |
 
 ## Testing location with Chrome DevTools
 
@@ -80,8 +122,10 @@ then reload) to see the "permission denied" message.
 Browser (Leaflet + Socket.IO client)          Node.js server
   geolocation.watchPosition ──player:move──▶  socket.js       (validation, protocol)
                                                   │
-  map: player, goal, route  ◀──route:update──  gameService.js  (goal generation, throttled rerouting)
-                            ◀──goal:reached──      │        │
+  map: players, goal, route ◀──game:state───  gameService.js  (goal generation, throttled rerouting)
+                            ◀──player:moved─       │        │
+                            ◀──route:update─       │        │
+                            ◀──game:won─────       │        │
                                               gameSession.js  routing.js ──HTTP──▶ OSRM
                                               (pure domain)   (route + snap)
                                                   │
@@ -93,8 +137,8 @@ Browser (Leaflet + Socket.IO client)          Node.js server
 | `server/src/index.js` | Composition root: wires Express, Socket.IO and the services; health check; graceful shutdown |
 | `server/src/config.js` | All tunables from environment variables |
 | `server/src/socket.js` | Socket protocol, input validation, errors returned via ack |
-| `server/src/gameService.js` | Creates sessions/goals, applies position updates, throttles rerouting |
-| `server/src/gameSession.js` | Pure domain model: goal, players, goal detection |
+| `server/src/gameService.js` | Creates sessions/goals, applies position updates, throttles rerouting, restarts rounds |
+| `server/src/gameSession.js` | Pure domain model: goal, players, goal detection, winner |
 | `server/src/routing.js` | OSRM client: shortest route, snap point to road |
 | `server/src/geo.js` | Haversine distance, random point in a ring, position validation |
 | `server/src/sessionStore.js` | Session storage behind a get/set/delete interface |
@@ -151,7 +195,9 @@ Map tiles still come from OpenStreetMap; a tile server could be self-hosted the 
 
 - The game server is stateless apart from `sessionStore`. To run several instances, replace the
   in-memory store with Redis and add the Socket.IO Redis adapter so room broadcasts reach every
-  instance.
+  instance. The winner check-and-set then moves to Redis too (`SET winner:<session> <player> NX`),
+  because a single event loop no longer guarantees exclusivity across processes.
+- Sticky sessions at the load balancer keep each Socket.IO connection on one instance.
 - Routing is the expensive part: it's isolated behind `routing.js`, throttled per player, and can
   be scaled independently (self-hosted OSRM replicas).
 - `/health` endpoint for container health checks and load balancers; SIGTERM handling for clean
