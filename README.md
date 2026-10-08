@@ -37,12 +37,42 @@ npm test
 3. The red line is the shortest walkable route; it is recalculated as you move.
 4. Get within 15 m of the goal to get "Goal reached!". Press **New goal** to play again.
 
-**Simulation mode:** a desktop doesn't move, so tick *Simulate movement* and use the arrow keys
-(5 m per press) or click on the map to move the player. It's also used automatically if location
-access is denied.
+The HUD (top right) shows your position and GPS accuracy, the goal position (with a **Copy**
+button), the live straight-line distance to the goal, the OSRM route distance and the game status.
+If location permission is denied or the position is unavailable, the HUD shows an error.
 
 **Sessions:** `http://localhost:3000/?session=my-game` joins a named session (default: `default`).
 Everyone in the same session shares the same goal.
+
+## Testing location with Chrome DevTools
+
+Movement comes only from real geolocation (`watchPosition`, `enableHighAccuracy: true`,
+`maximumAge: 0`). To test from a desk, override the location in Chrome:
+
+1. Open http://localhost:3000, then DevTools (`Cmd+Opt+I` / `Ctrl+Shift+I`).
+2. Open the Command Menu (`Cmd+Shift+P` / `Ctrl+Shift+P`), type **Show Sensors** and press Enter.
+3. Under **Location**, pick a preset or choose **Other…** / **Manage** to enter a custom
+   latitude and longitude, e.g. `32.085300, 34.781800`.
+4. Reload the page. The player marker appears at that location and a goal is generated around it.
+
+**Walking step by step:** keep the Sensors panel open and change the latitude or longitude a
+little at a time. The page updates on each change (no reload needed).
+
+| Change | Approx. distance |
+|--------|------------------|
+| latitude ± 0.0001 | ~11 m north/south |
+| longitude ± 0.0001 | ~9.5 m east/west (at latitude 32°) |
+
+The route is recalculated at most every 2 s and only after moving at least 5 m, so wait a moment
+between steps to see the red line update.
+
+**Testing goal detection:** click **Copy** next to the goal in the HUD, paste the `lat, lng`
+values into the Sensors latitude/longitude fields, and you'll get "Goal reached!" right away
+(the threshold is 15 m). Press **New goal** to start again.
+
+**Testing errors:** choose **Location unavailable** in Sensors to see the "position unavailable"
+message, or block location for `localhost` (lock icon in the address bar → Location → Block,
+then reload) to see the "permission denied" message.
 
 ## Architecture
 

@@ -10,18 +10,31 @@
 <body>
   <div id="map"></div>
 
-  <aside id="panel">
+  <aside id="hud">
     <h1>Navigation Game</h1>
-    <div id="status">Waiting for location…</div>
+    <div id="status" data-state="waiting">Waiting for location…</div>
+    <div id="error" role="alert" hidden></div>
+
+    <section>
+      <h2>Player</h2>
+      <div class="coords" id="player-coords">-</div>
+      <div class="muted">Accuracy: <span id="accuracy">-</span></div>
+    </section>
+
+    <section>
+      <h2>Goal</h2>
+      <div class="row">
+        <span class="coords" id="goal-coords">-</span>
+        <button id="copy-goal" disabled>Copy</button>
+      </div>
+    </section>
+
     <dl>
-      <dt>Session</dt><dd id="session">-</dd>
       <dt>Distance to goal</dt><dd id="distance">-</dd>
-      <dt>Route length</dt><dd id="route">-</dd>
+      <dt>Route distance</dt><dd id="route">-</dd>
+      <dt>Session</dt><dd id="session">-</dd>
     </dl>
-    <label>
-      <input type="checkbox" id="simulate" />
-      Simulate movement (arrow keys / click map)
-    </label>
+
     <button id="restart" disabled>New goal</button>
   </aside>
 

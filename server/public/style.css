@@ -1,18 +1,31 @@
 html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
 #map { position: absolute; inset: 0; }
 
-#panel {
+#hud {
   position: absolute; top: 12px; right: 12px; z-index: 1000;
-  width: 260px; padding: 12px 16px; border-radius: 8px;
+  width: 280px; padding: 12px 16px; border-radius: 8px; font-size: 14px;
   background: rgba(255, 255, 255, 0.95); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
-#panel h1 { font-size: 18px; margin: 0 0 8px; }
-#panel dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; margin: 8px 0; }
-#panel dt { color: #666; }
-#panel dd { margin: 0; text-align: right; font-weight: 600; }
-#panel label { display: block; margin: 8px 0; font-size: 14px; }
-#panel button { width: 100%; padding: 6px; }
-#status { font-size: 14px; color: #333; }
+#hud h1 { font-size: 18px; margin: 0 0 8px; }
+#hud h2 { font-size: 12px; margin: 10px 0 2px; color: #666; text-transform: uppercase; letter-spacing: 0.04em; }
+#hud dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; margin: 10px 0; }
+#hud dt { color: #666; }
+#hud dd { margin: 0; text-align: right; font-weight: 600; }
+#hud button { padding: 4px 10px; }
+#restart { width: 100%; padding: 6px; }
+
+.coords { font-family: ui-monospace, monospace; font-weight: 600; }
+.muted { color: #666; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+#status { font-weight: 600; padding: 4px 8px; border-radius: 4px; background: #eee; }
+#status[data-state="playing"] { background: #e3f2fd; color: #0d47a1; }
+#status[data-state="reached"] { background: #e8f5e9; color: #1b5e20; }
+
+#error {
+  margin-top: 8px; padding: 8px; border-radius: 4px;
+  background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a;
+}
 
 #banner {
   position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); z-index: 1000;
@@ -23,5 +36,5 @@ html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
 .goal-icon { font-size: 28px; line-height: 28px; }
 
 @media (max-width: 600px) {
-  #panel { left: 12px; right: 12px; width: auto; }
+  #hud { left: 12px; right: 12px; width: auto; }
 }
