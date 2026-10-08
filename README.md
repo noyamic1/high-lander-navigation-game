@@ -33,7 +33,7 @@ npm test
 
 1. Open the page and allow location access. The browser reads the host machine's position
    (OS location services) via the Geolocation API.
-2. A 🏁 goal appears 150–500 m away, snapped to the nearest walkable road.
+2. A goal net marker appears 150–500 m away, snapped to the nearest walkable road.
 3. The red line is the shortest walkable route; it is recalculated as you move.
 4. Get within 15 m of the goal to get "Goal reached!". Press **New goal** to play again.
 

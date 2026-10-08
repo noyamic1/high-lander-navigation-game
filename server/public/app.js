@@ -30,6 +30,7 @@ ui.session.textContent = sessionId;
 let position = null; // last known player position { lat, lng }
 let goal = null;
 let joined = false;
+let joining = false; // game:join sent, ack not received yet — the server has no session for us until then
 let playerMarker = null;
 let accuracyCircle = null;
 let goalMarker = null;
@@ -50,6 +51,10 @@ function showError(message) {
 
 // ---- rendering ----
 
+// Anchors are the image centers, so the exact coordinate sits in the middle of the ball / goal.
+const BALL_ICON = L.icon({ iconUrl: 'img/ball.png', iconSize: [32, 32], iconAnchor: [16, 16] });
+const GOAL_ICON = L.icon({ iconUrl: 'img/goal.png', iconSize: [70, 30], iconAnchor: [35, 15] });
+
 function renderPlayer(accuracy) {
   const latLng = [position.lat, position.lng];
   ui.playerCoords.textContent = formatCoords(position);
@@ -57,10 +62,8 @@ function renderPlayer(accuracy) {
 
   if (!playerMarker) {
     accuracyCircle = L.circle(latLng, { radius: accuracy, color: '#1976d2', weight: 1, fillOpacity: 0.1 }).addTo(map);
-    // The "ball" marker.
-    playerMarker = L.circleMarker(latLng, { radius: 9, color: '#fff', weight: 3, fillColor: '#1976d2', fillOpacity: 1 })
-      .addTo(map)
-      .bindTooltip('You');
+    // zIndexOffset keeps the ball drawn above the goal when they overlap at the finish.
+    playerMarker = L.marker(latLng, { icon: BALL_ICON, zIndexOffset: 1000 }).addTo(map).bindTooltip('You');
     map.setView(latLng, 16);
   } else {
     playerMarker.setLatLng(latLng);
@@ -72,9 +75,8 @@ function renderGoal() {
   const latLng = [goal.lat, goal.lng];
   ui.goalCoords.textContent = formatCoords(goal);
   ui.copyGoal.disabled = false;
-  const icon = L.divIcon({ className: 'goal-icon', html: '🏁', iconSize: [28, 28], iconAnchor: [4, 26] });
   if (goalMarker) goalMarker.setLatLng(latLng);
-  else goalMarker = L.marker(latLng, { icon }).addTo(map).bindTooltip('Goal');
+  else goalMarker = L.marker(latLng, { icon: GOAL_ICON }).addTo(map).bindTooltip('Goal');
 }
 
 function renderRoute(route) {
@@ -91,11 +93,15 @@ function onAck(ack) {
 // ---- talking to the server ----
 
 function join() {
-  if (joined || !position || !socket.connected) return;
-  joined = true;
+  if (joined || joining || !position || !socket.connected) return;
+  joining = true;
+  const sent = position;
   socket.emit('game:join', { sessionId, position }, (ack) => {
-    if (!ack.ok) joined = false;
+    joining = false;
+    joined = ack.ok;
     onAck(ack);
+    // Fixes that arrived while joining weren't sent; catch the server up with the latest one.
+    if (joined && position !== sent) socket.emit('player:move', { position }, onAck);
   });
 }
 
@@ -107,6 +113,7 @@ socket.on('connect', () => {
 // A reconnect gets a new socket id (= new player), so we must re-join with our last position.
 socket.on('disconnect', () => {
   joined = false;
+  joining = false;
   showError('Disconnected from server, reconnecting…');
 });
 
@@ -115,7 +122,7 @@ socket.on('game:state', (state) => {
   renderGoal();
   ui.banner.hidden = true;
   ui.restart.disabled = false;
-  setStatus('playing', 'Playing: head to the 🏁 goal');
+  setStatus('playing', 'Playing: head to the goal');
 });
 
 socket.on('route:update', renderRoute);

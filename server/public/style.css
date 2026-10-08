@@ -33,7 +33,6 @@ html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
   background: #2e7d32; color: white; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
-.goal-icon { font-size: 28px; line-height: 28px; }
 
 @media (max-width: 600px) {
   #hud { left: 12px; right: 12px; width: auto; }
