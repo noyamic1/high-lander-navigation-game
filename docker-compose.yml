@@ -1,0 +1,15 @@
+services:
+  game:
+    build: ./server
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      OSRM_URL: ${OSRM_URL:-https://routing.openstreetmap.de/routed-foot}
+      OSRM_PROFILE: ${OSRM_PROFILE:-foot}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
